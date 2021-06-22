@@ -9,21 +9,16 @@ using System.Text;
 using System.Xml.Linq;
 using SimpleJSON;
 
-namespace CLibDatabase
-{
-    public class DllEntry
-    {
-        private static string loadedDatabase = "";
+namespace CLibDatabase {
+    // ReSharper disable once UnusedMember.Global
+    public class DllEntry {
+        private static string _loadedDatabaseFilename = "";
+        private static string _databaseFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CLibDatabase");
+        private static Dictionary<string, string> _database = new Dictionary<string, string>();
 
-        private static string databaseFolder =
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CLibDatabase");
-
-        private static Dictionary<string, string> database = new Dictionary<string, string>();
-
-        static DllEntry()
-        {
-            if (!Directory.Exists(databaseFolder))
-                Directory.CreateDirectory(databaseFolder);
+        static DllEntry() {
+            if (!Directory.Exists(_databaseFolder))
+                Directory.CreateDirectory(_databaseFolder);
         }
 
 #if WIN64
@@ -31,8 +26,12 @@ namespace CLibDatabase
 #else
         [DllExport("_RVExtensionVersion@8", CallingConvention.StdCall)]
 #endif
-        public static void RVExtensionVersion(StringBuilder output, int outputSize)
-        {
+        // ReSharper disable once InconsistentNaming
+        // ReSharper disable once UnusedMember.Global
+        // ReSharper disable once UnusedParameter.Global
+#pragma warning disable IDE0060 // Remove unused parameter
+        public static void RVExtensionVersion(StringBuilder output, int outputSize) {
+#pragma warning restore IDE0060 // Remove unused parameter
             output.Append(GetVersion());
         }
 
@@ -41,201 +40,180 @@ namespace CLibDatabase
 #else
         [DllExport("_RVExtension@12", CallingConvention.StdCall)]
 #endif
-        public static void RVExtension(StringBuilder output, int outputSize,
-            [MarshalAs(UnmanagedType.LPStr)] string input)
-        {
+        // ReSharper disable once InconsistentNaming
+        // ReSharper disable once UnusedMember.Global
+        // ReSharper disable once UnusedParameter.Global
+#pragma warning disable IDE0060 // Remove unused parameter
+        public static void RVExtension(StringBuilder output, int outputSize, [MarshalAs(UnmanagedType.LPStr)] string input) {
+#pragma warning restore IDE0060 // Remove unused parameter
             if (input.ToLower() != "version")
                 return;
 
             output.Append(GetVersion());
         }
 
-        private static string GetVersion()
-        {
-            Assembly executingAssembly = Assembly.GetExecutingAssembly();
-            try
-            {
-                string location = executingAssembly.Location;
-                if (location == null)
-                    throw new Exception("Assembly location not found");
+        private static string GetVersion() {
+            var executingAssembly = Assembly.GetExecutingAssembly();
+            try {
+                var location = executingAssembly.Location;
                 return FileVersionInfo.GetVersionInfo(location).FileVersion;
-            }
-            catch (Exception)
-            {
+            } catch (Exception) {
+                // ignored
             }
 
             return "0.0.0.0";
         }
         [DllExport("SetExportPath")]
-        public static string SetExportPath(string path)
-        {
-            databaseFolder = path;
-            if (!Directory.Exists(databaseFolder))
-                Directory.CreateDirectory(databaseFolder);
+        public static string SetExportPath(string path) {
+            _databaseFolder = path;
+            if (!Directory.Exists(_databaseFolder))
+                Directory.CreateDirectory(_databaseFolder);
             return "true";
         }
 
         [DllExport("KeyExists")]
-        public static string KeyExists(string key)
-        {
-            return database.ContainsKey(key).ToString();
+        // ReSharper disable once UnusedMember.Global
+        public static string KeyExists(string key) {
+            return _database.ContainsKey(key).ToString();
         }
 
         [DllExport("Get")]
-        public static string Get(string key)
-        {
-            if (!database.ContainsKey(key))
-                return "ERROR";
-            return database[key];
+        // ReSharper disable once UnusedMember.Global
+        public static string Get(string key) {
+            return !_database.ContainsKey(key) ? "ERROR" : _database[key];
         }
 
         [DllExport("Set")]
-        public static string Set(string input)
-        {
-            string[] keyAndValue = input.Split(new[] {"~>"}, StringSplitOptions.RemoveEmptyEntries);
-            if (!database.ContainsKey(keyAndValue[0]))
-                database.Add(keyAndValue[0], keyAndValue[1]);
+        // ReSharper disable once UnusedMember.Global
+        public static string Set(string input) {
+            var keyAndValue = input.Split(new[] { "~>" }, StringSplitOptions.RemoveEmptyEntries);
+            if (!_database.ContainsKey(keyAndValue[0]))
+                _database.Add(keyAndValue[0], keyAndValue[1]);
             else
-                database[keyAndValue[0]] = keyAndValue[1];
+                _database[keyAndValue[0]] = keyAndValue[1];
 
             return "true";
         }
 
         [DllExport("Load")]
-        public static string Load(string filename)
-        {
-            if (loadedDatabase == filename)
+        // ReSharper disable once UnusedMember.Global
+        public static string Load(string filename) {
+            if (_loadedDatabaseFilename == filename)
                 return "true";
-            
-            using (FileStream fs = File.OpenRead(Path.Combine(databaseFolder, filename + ".clibdata")))
-            {
-                GZipStream cmp = new GZipStream(fs, CompressionMode.Decompress);
-                using (BinaryReader reader = new BinaryReader(cmp))
-                {
-                    int count = reader.ReadInt32();
-                    database = new Dictionary<string, string>(count);
-                    for (int i = 0; i < count; i++)
-                    {
-                        string key = reader.ReadString();
-                        string value = reader.ReadString();
-                        database.Add(key, value);
-                    }
+
+            using (var fs = File.OpenRead(Path.Combine(_databaseFolder, filename + ".clibdata")))
+            using (var gZipStream = new GZipStream(fs, CompressionMode.Decompress))
+            using (var reader = new BinaryReader(gZipStream)) {
+                var count = reader.ReadInt32();
+                _database = new Dictionary<string, string>(count);
+                for (var i = 0; i < count; i++) {
+                    var key = reader.ReadString();
+                    var value = reader.ReadString();
+                    _database.Add(key, value);
                 }
             }
 
-            loadedDatabase = filename;
+            _loadedDatabaseFilename = filename;
             return "true";
         }
 
         [DllExport("Save")]
-        public static string Save(string filename)
-        {
-            string path = Path.Combine(databaseFolder, filename + ".clibdata");
-            using (FileStream fs = File.OpenWrite(path))
-            {
-                GZipStream dcmp = new GZipStream(fs, CompressionLevel.Optimal);
-
-                using (BinaryWriter writer = new BinaryWriter(dcmp))
-                {
-                    writer.Write(database.Count);
-                    foreach (KeyValuePair<string, string> pair in database)
-                    {
-                        writer.Write(pair.Key);
-                        writer.Write(pair.Value);
-                    }
+        // ReSharper disable once UnusedMember.Global
+        // ReSharper disable once MemberCanBePrivate.Global
+        // ReSharper disable once UnusedMethodReturnValue.Global
+        public static string Save(string filename) {
+            using (var fs = File.OpenWrite(Path.Combine(_databaseFolder, filename + ".clibdata")))
+            using (var gZipStream = new GZipStream(fs, CompressionMode.Compress))
+            using (var writer = new BinaryWriter(gZipStream)) {
+                writer.Write(_database.Count);
+                foreach (var pair in _database) {
+                    writer.Write(pair.Key);
+                    writer.Write(pair.Value);
                 }
-                return $"File Exported to {path}";
+                return "true";
             }
         }
 
-        private static JSONNode ConvertToJson()
-        {
-            JSONNode json = new JSONObject();
-            foreach (KeyValuePair<string, string> item in database) json.Add(item.Key, item.Value);
+        private static JSONNode ConvertToJSON() {
+            var json = new JSONObject();
+            foreach (var item in _database)
+                json.Add(item.Key, item.Value);
             return json;
         }
 
-        private static void ConvertToDictionary(JSONNode json)
-        {
-            database.Clear();
-            foreach (KeyValuePair<string, JSONNode> item in json.Linq) database.Add(item.Key, item.Value.Value);
+        private static void ConvertToDictionary(JSONNode json) {
+            _database.Clear();
+            foreach (var item in json.Linq)
+                _database.Add(item.Key, item.Value.Value);
         }
 
-        private static void ConvertToDictionary(XContainer xml)
-        {
-            database.Clear();
-            foreach (XElement item in xml.Elements())
-            {
-                database.Add(item.Name.LocalName, item.Value);
+        private static void ConvertToDictionary(XContainer xml) {
+            _database.Clear();
+            foreach (XElement item in xml.Elements()) {
+                _database.Add(item.Name.LocalName, item.Value);
             }
         }
-        private static XDocument ConvertToXML()
-        {
+        private static XDocument ConvertToXML() {
             XDocument xml = new XDocument();
-            foreach (KeyValuePair<string, string> item in database)
-            {
+            foreach (KeyValuePair<string, string> item in _database) {
                 xml.Add(item.Key, new JSONString(item.Value));
             }
             return xml;
         }
+
         #region Import/Export
-
-        [DllExport("ExportJson")]
-        public static string ExportJson(string filename)
-        {
-            JSONNode json = ConvertToJson();
-            StringBuilder exportStringBuilder = new StringBuilder();
+        [DllExport("ExportJSON")]
+        // ReSharper disable once UnusedMember.Global
+        public static string ExportJSON(string filename) {
+            var json = ConvertToJSON();
+            var exportStringBuilder = new StringBuilder();
             json.WriteToStringBuilder(exportStringBuilder, 0, 4, JSONTextMode.Indent);
-            File.WriteAllText(
-                Path.Combine(databaseFolder, filename + ".json"), exportStringBuilder.ToString());
+            File.WriteAllText(Path.Combine(_databaseFolder, filename + ".json"), exportStringBuilder.ToString());
             return "true";
         }
 
-        [DllExport("ExportJsonBinary")]
-        public static string ExportJsonBinary(string filename)
-        {
-            JSONNode json = ConvertToJson();
-            json.SaveToCompressedFile(Path.Combine(databaseFolder, filename + ".bson"));
+        [DllExport("ExportJSONBinary")]
+        // ReSharper disable once UnusedMember.Global
+        public static string ExportJsonBinary(string filename) {
+            var json = ConvertToJSON();
+            json.SaveToCompressedFile(Path.Combine(_databaseFolder, filename + ".bson"));
             return "true";
         }
 
-        [DllExport("ExportXml")]
-        public static string ExportXml(string filePath)
-        {
+        [DllExport("ExportXML")]
+        public static string ExportXML(string filePath) {
             XDocument xml = ConvertToXML();
             xml.Save(filePath, SaveOptions.OmitDuplicateNamespaces);
             return "true";
         }
 
-        [DllExport("ImportJson")]
-        public static string ImportJson(string filename)
-        {
-            string jsonStr = File.ReadAllText(Path.Combine(databaseFolder, filename + ".json"));
-            JSONNode json = JSON.Parse(jsonStr);
+        [DllExport("ImportJSON")]
+        // ReSharper disable once UnusedMember.Global
+        public static string ImportJSON(string filename) {
+            var jsonStr = File.ReadAllText(Path.Combine(_databaseFolder, filename + ".json"));
+            var json = JSON.Parse(jsonStr);
             ConvertToDictionary(json);
             return "true";
         }
 
-        [DllExport("ImportJsonBinary")]
-        public static string ImportJsonBinary(string filename)
-        {
-            JSONNode json = JSONNode.LoadFromCompressedFile(Path.Combine(databaseFolder, filename + ".bson"));
+        [DllExport("ImportJSONBinary")]
+        // ReSharper disable once UnusedMember.Global
+        public static string ImportJSONBinary(string filename) {
+            var json = JSONNode.LoadFromCompressedFile(Path.Combine(_databaseFolder, filename + ".bson"));
             ConvertToDictionary(json);
             return "true";
         }
 
-        public static string ImportXml(string filePath)
-        {
+        [DllExport("ImportXML")]
+        public static string ImportXML(string filePath) {
             XDocument xml = XDocument.Load(filePath);
             ConvertToDictionary(xml);
             return "true";
         }
-
         #endregion Import/Export
 
-        ~DllEntry()
-        {
-            Save(loadedDatabase);
+        ~DllEntry() {
+            Save(_loadedDatabaseFilename);
         }
     }
 }

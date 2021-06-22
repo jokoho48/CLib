@@ -9,57 +9,53 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
-namespace CLibSocket
-{
+namespace CLibSocket {
+    // ReSharper disable once UnusedMember.Global
     public class DllEntry {
-        private const int AF_INET = 2;    // IP_v4 = System.Net.Sockets.AddressFamily.InterNetwork
-        private const int AF_INET6 = 23;  // IP_v6 = System.Net.Sockets.AddressFamily.InterNetworkV6
-
         [StructLayout(LayoutKind.Sequential)]
-        public struct MIB_UDPROW_OWNER_PID
-        {
+        private struct MIB_UDPROW_OWNER_PID {
             public uint LocalAddress;
             private ushort localPort;
             public uint PID;
 
-            public ushort LocalPort
-            {
-                get
-                {
-                    byte[] bytes = BitConverter.GetBytes(this.localPort);
+            public ushort LocalPort {
+                get {
+                    var bytes = BitConverter.GetBytes(this.localPort);
                     if (BitConverter.IsLittleEndian)
                         Array.Reverse(bytes);
-                    
+
                     return BitConverter.ToUInt16(bytes, 0);
                 }
             }
         }
 
-        enum UDP_TABLE_CLASS
-        {
+        // ReSharper disable once InconsistentNaming
+        private enum UDP_TABLE_CLASS {
+            // ReSharper disable InconsistentNaming
+            // ReSharper disable UnusedMember.Local
             UDP_TABLE_BASIC,
             UDP_TABLE_OWNER_PID,
             UDP_TABLE_OWNER_MODULE
+            // ReSharper enable InconsistentNaming
+            // ReSharper enable UnusedMember.Local
         }
 
         [DllImport("iphlpapi.dll", SetLastError = true)]
         private static extern uint GetExtendedUdpTable(IntPtr pTcpTable, ref int dwOutBufLen, bool sort, int ipVersion, UDP_TABLE_CLASS tblClass, uint reserved = 0);
 
-        private class TcpClientEntry
-        {
+        private class TcpClientEntry {
             public Uri Uri;
             public TcpClient TcpClient;
         }
 
-        private static Dictionary<string, TcpClientEntry> tcpClients = new Dictionary<string, TcpClientEntry>();
-        private static Timer tickTimer;
-        private static List<int> serverPorts = new List<int>();
-        private static ReaderWriterLock locker = new ReaderWriterLock();
+        private static readonly Dictionary<string, TcpClientEntry> TcpClients = new Dictionary<string, TcpClientEntry>();
+        private static readonly ReaderWriterLock Locker = new ReaderWriterLock();
+        private static List<int> _serverPorts = new List<int>();
 
         static DllEntry() {
             System.IO.File.WriteAllText("CLibSocket.log", string.Empty);
 
-            DllEntry.tickTimer = new Timer(DllEntry.OnTick, null, 0, 5000);
+            new Timer(OnTick, null, 0, 5000);
         }
 
 #if WIN64
@@ -67,9 +63,13 @@ namespace CLibSocket
 #else
         [DllExport("_RVExtensionVersion@8", CallingConvention.StdCall)]
 #endif
-        public static void RVExtensionVersion(StringBuilder output, int outputSize)
-        {
-            output.Append(DllEntry.GetVersion());
+        // ReSharper disable once InconsistentNaming
+        // ReSharper disable once UnusedMember.Global
+        // ReSharper disable once UnusedParameter.Global
+#pragma warning disable IDE0060 // Remove unused parameter
+        public static void RVExtensionVersion(StringBuilder output, int outputSize) {
+#pragma warning restore IDE0060 // Remove unused parameter
+            output.Append(GetVersion());
         }
 
 #if WIN64
@@ -77,189 +77,167 @@ namespace CLibSocket
 #else
         [DllExport("_RVExtension@12", CallingConvention.StdCall)]
 #endif
+        // ReSharper disable once InconsistentNaming
+        // ReSharper disable once UnusedMember.Global
+        // ReSharper disable once UnusedParameter.Global
+#pragma warning disable IDE0060 // Remove unused parameter
         public static void RVExtension(StringBuilder output, int outputSize, [MarshalAs(UnmanagedType.LPStr)] string input) {
+#pragma warning restore IDE0060 // Remove unused parameter
             if (input != "version")
                 return;
 
-            output.Append(DllEntry.GetVersion());
+            output.Append(GetVersion());
         }
 
-        private static string GetVersion()
-        {
+        private static string GetVersion() {
             var executingAssembly = Assembly.GetExecutingAssembly();
-            try
-            {
-                string location = executingAssembly.Location;
-                if (location == null)
-                    throw new Exception("Assembly location not found");
+            try {
+                var location = executingAssembly.Location;
                 return FileVersionInfo.GetVersionInfo(location).FileVersion;
+            } catch (Exception) {
+                // ignored
             }
-            catch (Exception) { }
+
             return "0.0.0.0";
         }
 
         [DllExport("Connect")]
+        // ReSharper disable once UnusedMember.Global
         public static string Connect(string address) {
-            string hash = "";
-            using (SHA1Managed sha1 = new SHA1Managed())
-            {
+            string hash;
+            using (var sha1 = new SHA1Managed()) {
                 hash = string.Join("", sha1.ComputeHash(Encoding.Default.GetBytes(address)).Select(b => b.ToString("x2"))).Substring(0, 7);
             }
             Log(hash);
 
-            if (DllEntry.tcpClients.ContainsKey(hash)) {
+            if (TcpClients.ContainsKey(hash)) {
                 return hash;
             }
 
-            if (!Uri.TryCreate(address, UriKind.Absolute, out Uri uri))
-            {
+            if (!Uri.TryCreate(address, UriKind.Absolute, out var uri)) {
                 Log("Malformed address: " + address);
                 return "error";
             }
 
             Log("Connecting to: " + uri.Host + ":" + uri.Port);
-            TcpClient tcpClient = DllEntry.Connect(uri);
-            DllEntry.tcpClients.Add(hash, new TcpClientEntry() { Uri = uri, TcpClient = tcpClient });
+            var tcpClient = Connect(uri);
+            TcpClients.Add(hash, new TcpClientEntry { Uri = uri, TcpClient = tcpClient });
 
             return hash;
         }
 
         [DllExport("Disconnect")]
-        public static string Disconnect(string hash)
-        {
-            if (!DllEntry.tcpClients.ContainsKey(hash))
-            {
+        // ReSharper disable once UnusedMember.Global
+        public static string Disconnect(string hash) {
+            if (!TcpClients.ContainsKey(hash)) {
                 return "false";
             }
-            
-            DllEntry.tcpClients[hash].TcpClient.Close();
-            DllEntry.tcpClients.Remove(hash);
-            
+
+            TcpClients[hash].TcpClient.Close();
+            TcpClients.Remove(hash);
+
             return "success";
         }
 
         [DllExport("IsConnected")]
-        public static string IsConnected(string hash)
-        {
-            if (!DllEntry.tcpClients.ContainsKey(hash))
-            {
+        // ReSharper disable once UnusedMember.Global
+        public static string IsConnected(string hash) {
+            if (!TcpClients.ContainsKey(hash)) {
                 return "error";
             }
 
-            return DllEntry.IsConnected(DllEntry.tcpClients[hash].TcpClient) ? "success" : "false";
+            return IsConnected(TcpClients[hash].TcpClient) ? "success" : "false";
         }
 
         [DllExport("Send")]
+        // ReSharper disable once UnusedMember.Global
         public static string Send(string data) {
-            string[] dataParts = data.Split(new char[] { ':' }, 2);
-            string hash = dataParts[0];
+            var dataParts = data.Split(new[] { ':' }, 2);
+            var hash = dataParts[0];
             data = dataParts[1];
 
-            if (!DllEntry.tcpClients.ContainsKey(hash))
+            if (!TcpClients.ContainsKey(hash))
                 return "Socket for address not connected";
 
-            DllEntry.Send(DllEntry.tcpClients[hash].TcpClient, data);
+            Send(TcpClients[hash].TcpClient, data);
 
             return "success";
         }
 
-        private static TcpClient Connect(Uri uri)
-        {
-            TcpClient tcpClient = new TcpClient(uri.Host, uri.Port);
+        private static TcpClient Connect(Uri uri) {
+            var tcpClient = new TcpClient(uri.Host, uri.Port);
             tcpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
             return tcpClient;
         }
 
-        private static bool IsConnected(TcpClient tcpClient)
-        {
-            try
-            {
+        private static bool IsConnected(TcpClient tcpClient) {
+            try {
                 return tcpClient.Connected && !(tcpClient.Client.Poll(1, SelectMode.SelectRead) && tcpClient.Client.Available == 0);
-            }
-            catch (ObjectDisposedException)
-            {
+            } catch (ObjectDisposedException) {
                 return false;
             }
         }
 
-        private static void Send(TcpClient tcpClient, string message)
-        {
-            byte[] dataBytes = Encoding.Default.GetBytes(message);
+        private static void Send(TcpClient tcpClient, string message) {
+            var dataBytes = Encoding.Default.GetBytes(message);
             tcpClient.GetStream().Write(dataBytes, 0, dataBytes.Length);
         }
 
-        private static void OnTick(object state)
-        {
-            DllEntry.ReconnectAllSockets();
+        private static void OnTick(object state) {
+            ReconnectAllSockets();
 
-            List<int> ports = DllEntry.GetArmaServerPorts();
-            if (!ports.SequenceEqual(DllEntry.serverPorts))
-            {
-                DllEntry.serverPorts = ports;
-                foreach (TcpClientEntry tcpClientEntry in DllEntry.tcpClients.Values)
-                {
-                    DllEntry.Send(tcpClientEntry.TcpClient, $"PORTS:{string.Join(":", DllEntry.serverPorts)}");
+            var ports = GetArmaServerPorts();
+            if (ports.SequenceEqual(_serverPorts))
+                return;
+
+            _serverPorts = ports;
+            foreach (var tcpClientEntry in TcpClients.Values) {
+                Send(tcpClientEntry.TcpClient, $"PORTS:{string.Join(":", _serverPorts)}");
+            }
+        }
+
+        private static void ReconnectAllSockets() {
+            foreach (var kvPair in TcpClients) {
+                var entry = kvPair.Value;
+
+                if (IsConnected(entry.TcpClient))
+                    continue;
+
+                try {
+                    entry.TcpClient.Close();
+                } catch (ObjectDisposedException) { }
+
+                try {
+                    entry.TcpClient = Connect(entry.Uri);
+                    Log("Reconnected");
+                } catch (SocketException e) {
+                    Log($"Reconnect - Socket exception {e.Message}");
                 }
             }
         }
 
-        private static void ReconnectAllSockets()
-        {
-            foreach (KeyValuePair<string, TcpClientEntry> kvPair in DllEntry.tcpClients)
-            {
-                string hash = kvPair.Key;
-                TcpClientEntry entry = kvPair.Value;
+        private static List<int> GetArmaServerPorts() {
+            var ports = new List<int>();
+            var bufferSize = 0;
+            var bufferTable = Marshal.AllocHGlobal(bufferSize);
 
-                if (!DllEntry.IsConnected(entry.TcpClient))
-                {
-                    try
-                    {
-                        entry.TcpClient.Close();
-                    }
-                    catch (ObjectDisposedException) { }
-
-                    try
-                    {
-                        entry.TcpClient = DllEntry.Connect(entry.Uri);
-                        Log("Reconnected");
-                    }
-                    catch (SocketException e)
-                    {
-                        Log($"Reconnect - Socket exception {e.Message}");
-                    }
-                }
-            }
-        }
-
-        private static List<int> GetArmaServerPorts()
-        {
-            List<int> ports = new List<int>();
-            int bufferSize = 0;
-            uint ret = GetExtendedUdpTable(IntPtr.Zero, ref bufferSize, false, AF_INET, UDP_TABLE_CLASS.UDP_TABLE_OWNER_PID);
-            IntPtr bufferTable = Marshal.AllocHGlobal(bufferSize);
-
-            try
-            {
-                ret = GetExtendedUdpTable(bufferTable, ref bufferSize, false, AF_INET, UDP_TABLE_CLASS.UDP_TABLE_OWNER_PID);
-                if (ret != 0)
-                {
+            try {
+                var ret = GetExtendedUdpTable(bufferTable, ref bufferSize, false, (int)AddressFamily.InterNetwork, UDP_TABLE_CLASS.UDP_TABLE_OWNER_PID);
+                if (ret != 0) {
                     return ports;
                 }
 
-                int numberOfEntires = Marshal.ReadInt32(bufferTable, 0);
-                IntPtr rowPtr = bufferTable + 4;
+                var numberOfEntries = Marshal.ReadInt32(bufferTable, 0);
+                var rowPtr = bufferTable + 4;
 
-                for (int i = 0; i < numberOfEntires; i++)
-                {
-                    MIB_UDPROW_OWNER_PID row = (MIB_UDPROW_OWNER_PID)Marshal.PtrToStructure(rowPtr, typeof(MIB_UDPROW_OWNER_PID));
-                    rowPtr = rowPtr + Marshal.SizeOf(row);
+                for (var i = 0; i < numberOfEntries; i++) {
+                    var row = (MIB_UDPROW_OWNER_PID)Marshal.PtrToStructure(rowPtr, typeof(MIB_UDPROW_OWNER_PID));
+                    rowPtr += Marshal.SizeOf(row);
 
                     if (row.PID == Process.GetCurrentProcess().Id && row.LocalAddress == 0)
                         ports.Add(row.LocalPort);
                 }
-            }
-            finally
-            {
+            } finally {
                 Marshal.FreeHGlobal(bufferTable);
             }
 
@@ -267,14 +245,11 @@ namespace CLibSocket
         }
 
         private static void Log(params object[] obj) {
-            try
-            {
-                locker.AcquireWriterLock(int.MaxValue);
+            try {
+                Locker.AcquireWriterLock(int.MaxValue);
                 System.IO.File.AppendAllText("CLibSocket.log", string.Concat(DateTime.Now.ToString("HH:mm:ss.fff"), " ", string.Concat(obj), "\r\n"));
-            }
-            finally
-            {
-                locker.ReleaseWriterLock();
+            } finally {
+                Locker.ReleaseWriterLock();
             }
         }
     }

@@ -1,18 +1,17 @@
 using System;
-using System.Runtime.InteropServices;
-using System.Text;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
-using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
 
-namespace CLibLogging
-{
-    public class DllEntry
-    {
-        private static string startTime = "";
-        static DllEntry()
-        {
-            startTime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+namespace CLibLogging {
+    // ReSharper disable once UnusedMember.Global
+    public class DllEntry {
+        private static readonly string StartTime;
+
+        static DllEntry() {
+            StartTime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
         }
 
 #if WIN64
@@ -20,9 +19,13 @@ namespace CLibLogging
 #else
         [DllExport("_RVExtensionVersion@8", CallingConvention.StdCall)]
 #endif
-        public static void RVExtensionVersion(StringBuilder output, int outputSize)
-        {
-            output.Append(DllEntry.GetVersion());
+        // ReSharper disable once InconsistentNaming
+        // ReSharper disable once UnusedMember.Global
+        // ReSharper disable once UnusedParameter.Global
+#pragma warning disable IDE0060 // Remove unused parameter
+        public static void RVExtensionVersion(StringBuilder output, int outputSize) {
+#pragma warning restore IDE0060 // Remove unused parameter
+            output.Append(GetVersion());
         }
 
 #if WIN64
@@ -30,42 +33,42 @@ namespace CLibLogging
 #else
         [DllExport("_RVExtension@12", CallingConvention.StdCall)]
 #endif
-        public static void RVExtension(StringBuilder output, int outputSize, [MarshalAs(UnmanagedType.LPStr)] string input)
-        {
+        // ReSharper disable once InconsistentNaming
+        // ReSharper disable once UnusedMember.Global
+        // ReSharper disable once UnusedParameter.Global
+#pragma warning disable IDE0060 // Remove unused parameter
+        public static void RVExtension(StringBuilder output, int outputSize, [MarshalAs(UnmanagedType.LPStr)] string input) {
+#pragma warning restore IDE0060 // Remove unused parameter
             if (input.ToLower() != "version")
                 return;
 
-            output.Append(DllEntry.GetVersion());
+            output.Append(GetVersion());
         }
 
-        private static string GetVersion()
-        {
+        private static string GetVersion() {
             var executingAssembly = Assembly.GetExecutingAssembly();
-            try
-            {
-                string location = executingAssembly.Location;
-                if (location == null)
-                    throw new Exception("Assembly location not found");
+            try {
+                var location = executingAssembly.Location;
                 return FileVersionInfo.GetVersionInfo(location).FileVersion;
+            } catch (Exception) {
+                // ignored
             }
-            catch (Exception) { }
+
             return "0.0.0.0";
         }
 
         [DllExport("Log")]
-        public static string Log(string input)
-        {
-            string[] inputParts = input.Split(new char[] { ':' }, 2);
+        // ReSharper disable once UnusedMember.Global
+        public static string Log(string input) {
+            var inputParts = input.Split(new[] { ':' }, 2);
 
-            string path = Path.Combine(Environment.CurrentDirectory, "CLib_Logs", startTime.Replace("-", ""));
+            var path = Path.Combine(Environment.CurrentDirectory, "CLib_Logs", StartTime.Replace("-", ""));
             if (!File.Exists(path))
-            {
                 Directory.CreateDirectory(path);
-            }
+
             // TODO let the user define the File format
-            using (StreamWriter file = new StreamWriter(path + string.Format("\\CLibLog_{0}_{1}.{2}", startTime, inputParts[0], "log"), true))
-            {
-                string log = DateTime.Now.ToString("HH-mm-ss") + inputParts[1];
+            using (var file = new StreamWriter(path + $"\\CLibLog_{StartTime}_{inputParts[0]}.log", true)) {
+                var log = DateTime.Now.ToString("HH-mm-ss") + inputParts[1];
                 file.WriteLine(log);
             }
             return "";

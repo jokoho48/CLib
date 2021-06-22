@@ -1,26 +1,22 @@
 using System;
 
-namespace CLib
-{
-    public class ArmaRequest
-    {
+namespace CLib {
+    public class ArmaRequest {
         public int TaskId { get; private set; }
         public string ExtensionName { get; private set; }
         public string ActionName { get; private set; }
         public string Data { get; private set; }
 
-        public static ArmaRequest Parse(string input)
-        {
-            int headerStart = input.IndexOf(ControlCharacter.SOH);
-            int textStart = input.IndexOf(ControlCharacter.STX);
-            int textEnd = input.IndexOf(ControlCharacter.ETX);
+        public static ArmaRequest Parse(string input) {
+            var headerStart = input.IndexOf(ControlCharacter.SOH);
+            var textStart = input.IndexOf(ControlCharacter.STX);
+            var textEnd = input.IndexOf(ControlCharacter.ETX);
 
-            string header = input.Substring(headerStart < 0 ? 0 : headerStart + 1, (textStart < 0 ? input.Length : textStart) - 1);
-            string[] headerValues = header.Split(new [] { ControlCharacter.US }, 3);
+            var header = input.Substring(headerStart < 0 ? 0 : headerStart + 1, (textStart < 0 ? input.Length : textStart) - 1);
+            var headerValues = header.Split(new [] { ControlCharacter.US }, 3);
 
             var request = new ArmaRequest();
-            int taskId;
-            if (!int.TryParse(headerValues[0], out taskId))
+            if (!int.TryParse(headerValues[0], out var taskId))
                 throw new ArgumentException($"Invalid task id: {headerValues[0]}");
             request.TaskId = taskId;
             request.ExtensionName = headerValues[1].Trim();

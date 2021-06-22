@@ -3,39 +3,40 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 
-namespace CLib
-{
-    public static class FunctionLoader
-    {
+namespace CLib {
+    public static class FunctionLoader {
+        // ReSharper disable InconsistentNaming
+        // ReSharper disable MemberCanBePrivate.Global
+        // ReSharper disable MemberCanBePrivate.Local
+        // ReSharper disable FieldCanBeMadeReadOnly.Global
+        // ReSharper disable FieldCanBeMadeReadOnly.Local
+        // ReSharper disable IdentifierTypo
+        // ReSharper disable UnusedMember.Global
         [StructLayout(LayoutKind.Explicit)]
-        private struct IMAGE_DOS_HEADER
-        {
+        private struct IMAGE_DOS_HEADER {
             [FieldOffset(0)]
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)]
             public char[] e_magic;
             [FieldOffset(60)]
             public int e_lfanew;
 
-            public bool IsValid => new string(e_magic) == "MZ";
+            public bool IsValid => new string(this.e_magic) == "MZ";
         }
-
+        
         [StructLayout(LayoutKind.Explicit)]
-        public struct IMAGE_FILE_HEADER
-        {
+        public struct IMAGE_FILE_HEADER {
             [FieldOffset(0)]
             public ushort Machine;
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        public struct IMAGE_DATA_DIRECTORY
-        {
+        public struct IMAGE_DATA_DIRECTORY {
             public int VirtualAddress;
             public int Size;
         }
 
         [StructLayout(LayoutKind.Explicit)]
-        public struct IMAGE_OPTIONAL_HEADER32
-        {
+        public struct IMAGE_OPTIONAL_HEADER32 {
             [FieldOffset(0)]
             public ushort Magic;
             [FieldOffset(2)]
@@ -132,20 +133,18 @@ namespace CLib
         }
 
         [StructLayout(LayoutKind.Explicit)]
-        public struct IMAGE_NT_HEADERS32
-        {
+        public struct IMAGE_NT_HEADERS32 {
             [FieldOffset(0)]
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
             public char[] Signature;
             [FieldOffset(24)]
             public IMAGE_OPTIONAL_HEADER32 OptionalHeader;
 
-            public bool IsValid => new string(Signature) == "PE\0\0";
+            public bool IsValid => new string(this.Signature) == "PE\0\0";
         }
 
         [StructLayout(LayoutKind.Explicit)]
-        public struct IMAGE_OPTIONAL_HEADER64
-        {
+        public struct IMAGE_OPTIONAL_HEADER64 {
             [FieldOffset(0)]
             public ushort Magic;
             [FieldOffset(2)]
@@ -239,20 +238,18 @@ namespace CLib
         }
 
         [StructLayout(LayoutKind.Explicit)]
-        public struct IMAGE_NT_HEADERS64
-        {
+        public struct IMAGE_NT_HEADERS64 {
             [FieldOffset(0)]
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
             public char[] Signature;
             [FieldOffset(24)]
             public IMAGE_OPTIONAL_HEADER64 OptionalHeader;
 
-            public bool IsValid => new string(Signature) == "PE\0\0";
+            public bool IsValid => new string(this.Signature) == "PE\0\0";
         }
 
         [StructLayout(LayoutKind.Explicit)]
-        public struct IMAGE_EXPORT_DIRECTORY
-        {
+        public struct IMAGE_EXPORT_DIRECTORY {
             [FieldOffset(24)]
             public int NumberOfNames;
             [FieldOffset(32)]
@@ -261,10 +258,16 @@ namespace CLib
 
 
         [Flags]
-        private enum LoadLibraryFlags : uint
-        {
-            DONT_RESOLVE_DLL_REFERENCES = 0x00000001,
+        private enum LoadLibraryFlags : uint {
+            DONT_RESOLVE_DLL_REFERENCES = 0x00000001
         }
+        // ReSharper enable InconsistentNaming
+        // ReSharper enable MemberCanBePrivate.Global
+        // ReSharper enable MemberCanBePrivate.Local
+        // ReSharper enable FieldCanBeMadeReadOnly.Global
+        // ReSharper enable FieldCanBeMadeReadOnly.Local
+        // ReSharper enable IdentifierTypo
+        // ReSharper enable UnusedMember.Global
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr LoadLibraryEx(string lpFileName, IntPtr hReservedNull, LoadLibraryFlags dwFlags);
@@ -279,14 +282,12 @@ namespace CLib
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern int GetLastError();
 
-        public static List<string> ExportTable(string dllPath)
-        {
+        public static List<string> ExportTable(string dllPath) {
             var hModule = LoadLibraryEx(dllPath, IntPtr.Zero, LoadLibraryFlags.DONT_RESOLVE_DLL_REFERENCES);
             if (hModule == IntPtr.Zero)
                 throw new Win32Exception(GetLastError());
 
-            try
-            {
+            try {
                 var imageDosHeader = Marshal.PtrToStructure<IMAGE_DOS_HEADER>(hModule);
                 if (!imageDosHeader.IsValid)
                     throw new Exception($"IMAGE_DOS_HEADER is invalid: {dllPath}");
@@ -299,17 +300,15 @@ namespace CLib
                 if (!imageNtHeaders.IsValid)
                     throw new Exception($"IMAGE_NT_HEADERS is invalid: {dllPath}");
 
-                IMAGE_DATA_DIRECTORY exportTabledataDirectory = imageNtHeaders.OptionalHeader.ExportTable;
+                var exportTabledataDirectory = imageNtHeaders.OptionalHeader.ExportTable;
                 if (exportTabledataDirectory.Size == 0)
                     return new List<string>();
 
-                var exportTable =
-                    Marshal.PtrToStructure<IMAGE_EXPORT_DIRECTORY>(hModule + exportTabledataDirectory.VirtualAddress);
+                var exportTable = Marshal.PtrToStructure<IMAGE_EXPORT_DIRECTORY>(hModule + exportTabledataDirectory.VirtualAddress);
 
                 var names = new List<string>();
-                for (var i = 0; i < exportTable.NumberOfNames; i++)
-                {
-                    var name = Marshal.PtrToStringAnsi(hModule + Marshal.ReadInt32(hModule + exportTable.AddressOfNames + (i * 4)));
+                for (var i = 0; i < exportTable.NumberOfNames; i++) {
+                    var name = Marshal.PtrToStringAnsi(hModule + Marshal.ReadInt32(hModule + exportTable.AddressOfNames + i * 4));
                     if (name == null)
                         continue;
 
@@ -317,15 +316,10 @@ namespace CLib
                 }
 
                 return names;
-            }
-            finally
-            {
-                FreeLibrary(hModule);
-            }
+            } finally { FreeLibrary(hModule); }
         }
 
-        public static T LoadFunction<T>(string dllPath, string functionName)
-        {
+        public static T LoadFunction<T>(string dllPath, string functionName) {
             var hModule = LoadLibraryEx(dllPath, IntPtr.Zero, 0);
             if (hModule == IntPtr.Zero)
                 throw new ArgumentException($"Dll not found: {dllPath} - Error code: {GetLastError()}");
